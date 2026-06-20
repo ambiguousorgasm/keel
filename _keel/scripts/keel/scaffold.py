@@ -322,7 +322,21 @@ def init_project(
         (root / ".env.example").write_text(_ENV_EXAMPLE.format(root=root))
         result.created.append(".env.example")
 
-    # 8. optional git init
+    # 8. publish skills to .agents/skills/ for agent discovery (Zed/Claude Code/…)
+    try:
+        from . import skills as _skills
+        from .helpers import ProjectLayout as _Layout
+
+        layout = _Layout.from_root(root)
+        _skills.export_agent_skills(layout.skills, layout.agents_skills)
+        layout.agents_catalog.parent.mkdir(parents=True, exist_ok=True)
+        layout.agents_catalog.write_text(_skills.render_catalog(layout.skills))
+        result.created.append(".agents/skills/ (agent-discoverable skill mirrors)")
+    except Exception:
+        # Non-fatal: the project is still valid; `keel skills sync` can publish later.
+        pass
+
+    # 9. optional git init
     if git and shutil.which("git"):
         subprocess.run(["git", "init", "-q"], cwd=root, check=False)
         result.git_initialized = (root / ".git").is_dir()

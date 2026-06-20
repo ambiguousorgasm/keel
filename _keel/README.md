@@ -272,6 +272,31 @@ It's a thin, stateless wrapper over the Python API — same gates, same source o
 truth. See `_keel/scripts/keel/MCP.md` for wiring into Claude Desktop / Code and
 the full tool catalog.
 
+## Skills & agent discovery (Zed, Claude Code, Codex, Gemini)
+
+Skills are task-scoped workflows. They live **canonically** in `_keel/skills/<id>/`
+(so they travel with the OS and update cleanly), and are **published** for
+agent discovery to `.agents/skills/<id>/` — the portable Agent Skills layout that
+Zed's native agent, Claude Code, Codex, and Gemini all read. One source of truth,
+two surfaces:
+
+```bash
+keel skills sync     # regenerate .agents/skills/ + .agents/SKILLS.md from _keel/skills/
+keel skills lint     # validate frontmatter, names, manual-only safeguards, and drift
+```
+
+`keel init` runs the sync for you, so a fresh project is agent-discoverable
+immediately. In Zed, open the repo and the agent sees the skill catalog and
+selects the one whose **description** matches the task; `AGENTS.md` is the
+always-on contract that tells it to orient first and load only the relevant
+skill. The `.agents/` tree is a generated build artifact (each mirror carries a
+DO-NOT-EDIT banner) — edit the canonical skill in `_keel/skills/`, then re-sync.
+
+A skill may set two optional frontmatter flags: `manual_only: true` (never
+auto-selected; exported with the cross-tool `disable-model-invocation: true`
+safeguard — used by `dev-release`), and `export: false` (kept out of `.agents/`,
+e.g. a local demo).
+
 ## Worked example
 
 See `_keel/examples/url-shortener/` for a complete sample bootstrap output —

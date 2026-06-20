@@ -7,6 +7,7 @@ description: >
   rows, mixed types, or junk headers that needs normalizing before analysis.
 version: 0.1
 keywords: [example, csv, data-cleaning, demo]
+export: false  # demo skill — not published to .agents/skills/
 ---
 
 # Example — CSV Clean

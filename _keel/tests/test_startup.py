@@ -51,3 +51,14 @@ def test_start_py_has_dependency_check():
     text = (Path(__file__).resolve().parents[1] / "start.py").read_text()
     assert "_missing_deps" in text
     assert "requirements.txt" in text
+
+
+def test_root_main_py_handles_frozen():
+    """The frozen-bundle fix must be present — PyInstaller sets sys.frozen=True
+    and the old code would sys.exit(1) before importing keel."""
+    text = (Path(__file__).resolve().parents[1] / "main.py").read_text()
+    assert 'getattr(sys, "frozen", False)' in text
+    # must short-circuit BEFORE the error/exit block
+    frozen_pos = text.index('getattr(sys, "frozen", False)')
+    error_pos = text.index('"ERROR: could not locate the KEEL package.')
+    assert frozen_pos < error_pos, "frozen check must come before the error exit"

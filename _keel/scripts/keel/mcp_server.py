@@ -276,6 +276,21 @@ def build_server(root: Path | str) -> FastMCP:
         s = repo.create_skill(skill_id, name=name, description=description)
         return _skill_info(s)
 
+    @mcp.tool()
+    def keel_skills_sync() -> dict[str, Any]:
+        """Publish the canonical skills to .agents/skills/ (the portable Agent
+        Skills layout that Zed, Claude Code, Codex, and Gemini discover) and
+        regenerate the .agents/SKILLS.md catalog. Returns the written and
+        removed skill ids. Idempotent."""
+        return repo.sync_agent_skills()
+
+    @mcp.tool()
+    def keel_skills_lint() -> dict[str, Any]:
+        """Validate the skill library: frontmatter, duplicate names, manual-only
+        safeguards, and .agents mirror/catalog drift. Returns {ok, problems}."""
+        problems = repo.lint_skills()
+        return {"ok": not problems, "problems": problems}
+
     return mcp
 
 

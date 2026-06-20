@@ -13,6 +13,8 @@ scripts:
     keel skills show <id>          print a skill's body
     keel skills search <query>     find skills
     keel skills new <id>           scaffold a new skill
+    keel skills sync               publish skills to .agents/skills/ (agent discovery)
+    keel skills lint               validate the skill library
     keel code-map                  refresh docs/code-map/
     keel mcp [--root ...]          run the MCP server
 
@@ -133,6 +135,16 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     try:
         skills = repo.list_skills()
         print(f"{ok} skills load: {len(skills)} found")
+        # 5b. Agent-discoverable mirror in sync? (non-fatal — a convenience surface)
+        if repo.layout.agents_skills.exists():
+            drift = [p for p in repo.lint_skills() if "sync" in p or "mirror" in p]
+            if drift:
+                print(f"{warn}.agents/skills/ is out of date — run `keel skills sync`")
+            else:
+                print(f"{ok} .agents/skills/ mirror in sync")
+        else:
+            print(f"{warn}.agents/skills/ not generated — run `keel skills sync` for "
+                  f"Zed/Claude Code/Codex discovery")
     except KeelError as e:
         print(f"{bad} skills failed to load: {e}")
         problems += 1
@@ -271,7 +283,36 @@ def _cmd_skills_new(args: argparse.Namespace) -> int:
     skill = repo.create_skill(args.skill_id, name=args.name, description=args.description)
     print(f"✅ created skill: {skill.path.relative_to(repo.root)}/SKILL.md")
     print("   Edit the frontmatter description and body, then it's discoverable.")
+    print("   Run `keel skills sync` to publish it to .agents/skills/ for agents.")
     return 0
+
+
+@_guard
+def _cmd_skills_sync(args: argparse.Namespace) -> int:
+    repo = KeelRepo.discover()
+    result = repo.sync_agent_skills()
+    rel = repo.layout.agents_skills.relative_to(repo.root)
+    n = len(result["written"])
+    print(f"✅ synced {n} skill(s) → {rel}/")
+    for sid in result["written"]:
+        print(f"   + {sid}")
+    for sid in result["removed"]:
+        print(f"   - {sid} (stale mirror removed)")
+    print(f"   catalog: {repo.layout.agents_catalog.relative_to(repo.root)}")
+    return 0
+
+
+@_guard
+def _cmd_skills_lint(args: argparse.Namespace) -> int:
+    repo = KeelRepo.discover()
+    problems = repo.lint_skills()
+    if not problems:
+        print("✅ skill library is clean.")
+        return 0
+    print(f"✗ {len(problems)} problem(s) found:")
+    for p in problems:
+        print(f"   • {p}")
+    return 1
 
 
 # ─── code-map ────────────────────────────────────────────────────────────────
@@ -375,6 +416,24 @@ def _prompt_yes(label: str, default: bool = True) -> bool:
     return ans.startswith("y")
 
 
+def _prompt_prefix(default: str | None) -> str:
+    """Prompt for a task prefix, re-asking on invalid input instead of failing
+    at the end. A prefix must be 2-6 uppercase letters."""
+    import re
+    valid = re.compile(r"^[A-Z]{2,6}$")
+    # sanitize the default so it's always acceptable
+    safe_default = (default or "").upper()
+    safe_default = "".join(c for c in safe_default if c.isalpha())[:6]
+    if not valid.fullmatch(safe_default):
+        safe_default = None
+    while True:
+        ans = _prompt("Task prefix (2-6 CAPITAL letters, e.g. ORDP)", safe_default)
+        ans = ans.strip().upper()
+        if valid.fullmatch(ans):
+            return ans
+        print(f"  ✗ {ans!r} isn't valid — use 2-6 letters A-Z (no digits/spaces). Try again.")
+
+
 def _interactive_init(args: argparse.Namespace) -> argparse.Namespace:
     """Fill missing init params by prompting. Mutates and returns args."""
     print("Create a new KEEL project\n" + "-" * 25)
@@ -400,9 +459,8 @@ def _interactive_init(args: argparse.Namespace) -> argparse.Namespace:
         or Path(args.path).expanduser().name.replace("-", " ").title()
     )
     args.name = args.name or _prompt("Project name", default_name)
-    args.prefix = args.prefix or _prompt(
-        "Task prefix (2-6 caps)", parsed_prefix or _derive_prefix(args.name)
-    )
+    if not args.prefix:
+        args.prefix = _prompt_prefix(parsed_prefix or _derive_prefix(args.name))
     if args.runner is None:
         args.runner = "just" if _prompt_yes("Use `just` as the command runner? (else make)", True) else "make"
     if args.git is None:
@@ -558,6 +616,10 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--name", default=None)
     c.add_argument("--description", default=None)
     c.set_defaults(func=_cmd_skills_new)
+    c = ssub.add_parser("sync", help="generate .agents/skills/ mirrors + catalog for agent discovery")
+    c.set_defaults(func=_cmd_skills_sync)
+    c = ssub.add_parser("lint", help="validate the skill library and check .agents drift")
+    c.set_defaults(func=_cmd_skills_lint)
 
     sp = sub.add_parser("code-map", help="refresh docs/code-map/")
     sp.set_defaults(func=_cmd_code_map)

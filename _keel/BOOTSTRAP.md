@@ -201,6 +201,18 @@ Do NOT generate `scripts/agent/` at the repo root — those scripts live under
 `_keel/`. Generate `scripts/checks/` only if the project needs custom check
 wrappers beyond what the justfile expresses directly.
 
+Finally, publish the skill library for agent discovery:
+
+```
+keel skills sync
+```
+
+This generates `.agents/skills/` (the portable Agent Skills layout that Zed,
+Claude Code, Codex, and Gemini read) and the `.agents/SKILLS.md` catalog from the
+canonical skills in `_keel/skills/`. `keel init` already does this, so it is only
+strictly needed if skills changed; running it is cheap and idempotent. Confirm it
+is clean with `keel skills lint`.
+
 ---
 
 ## Step 9 — Verify, then write the bootstrap report

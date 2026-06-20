@@ -237,6 +237,31 @@ class KeelRepo:
         """
         return skills_mod.skills_index(self.layout.skills)
 
+    def sync_agent_skills(self) -> dict[str, list[str]]:
+        """Generate the `.agents/skills/` mirrors + catalog from canonical skills.
+
+        Single source of truth stays `_keel/skills/`; this projects it into the
+        portable Agent Skills layout that Zed, Claude Code, Codex, etc. discover.
+        Returns {"written": [...], "removed": [...]}.
+        """
+        result = skills_mod.export_agent_skills(
+            self.layout.skills, self.layout.agents_skills
+        )
+        self.layout.agents_catalog.parent.mkdir(parents=True, exist_ok=True)
+        self.layout.agents_catalog.write_text(
+            skills_mod.render_catalog(self.layout.skills)
+        )
+        return result
+
+    def lint_skills(self) -> list[str]:
+        """Validate the skill library (frontmatter, dupes, manual-only safeguard,
+        and `.agents` mirror/catalog drift). Returns a list of problems."""
+        return skills_mod.lint_skills(
+            self.layout.skills,
+            agents_skills_dir=self.layout.agents_skills,
+            catalog_path=self.layout.agents_catalog,
+        )
+
     def create_skill(
         self,
         skill_id: str,

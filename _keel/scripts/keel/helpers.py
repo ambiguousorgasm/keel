@@ -35,6 +35,8 @@ class ProjectLayout:
     schema: Path
     templates: Path
     skills: Path
+    agents_skills: Path
+    agents_catalog: Path
     tasks_active: Path
     tasks_completed: Path
     tasks_blocked: Path
@@ -49,6 +51,8 @@ class ProjectLayout:
             schema=keel / "spec_model.schema.json",
             templates=keel / "templates",
             skills=keel / "skills",
+            agents_skills=root / ".agents" / "skills",
+            agents_catalog=root / ".agents" / "SKILLS.md",
             tasks_active=root / "tasks" / "active",
             tasks_completed=root / "tasks" / "completed",
             tasks_blocked=root / "tasks" / "blocked",

@@ -44,7 +44,29 @@
 - Build a task's context.md: `just build-context <ID>`
 - Create a new task packet:  `just new-task <slug>`
 
-## 5. Role tiers (when running multi-agent)
+## 5. Skills
+
+Skills are task-scoped workflows. They live canonically in `_keel/skills/<id>/`
+and are published for agent discovery to `.agents/skills/<id>/` — the portable
+Agent Skills layout that Zed, Claude Code, Codex, and Gemini read.
+
+- **Select by task, load on demand.** Survey skill *descriptions* (`keel skills
+  list`, or your tool's skill catalog) and load the ONE whose description matches
+  the task. Do not ingest the whole library every turn.
+- **Not every task needs a skill.** A small, obvious edit does not. Reach for a
+  skill when its trigger matches; otherwise just work within these rules.
+- **Lifecycle:** `dev-intake` (orient) → `dev-plan-task` → `dev-build-context` →
+  `dev-implement-task` → `dev-review-diff` → `dev-update-handoff`.
+  `dev-update-docs` fixes doc drift; `dev-map-module` / `dev-write-scenario` are
+  targeted helpers.
+- **Manual-only skills** (e.g. `dev-release`) are exported with
+  `disable-model-invocation: true`. NEVER select or run them autonomously — only
+  on explicit human instruction for that specific action.
+- **Don't edit the skill library during an unrelated task.** Skills are canonical
+  in `_keel/skills/`; after any change run `keel skills sync` (refreshes
+  `.agents/` + the `.agents/SKILLS.md` catalog) and `keel skills lint`.
+
+## 6. Role tiers (when running multi-agent)
 
 - **Planner / mapper** (read-only): cheap/fast model.
 - **Builder:** frontier coding model, one isolated worktree per task.
@@ -54,7 +76,7 @@
   Reviews raw diff + evidence — NOT the builder's explanation. Also checks
   PRINCIPLES compliance and that any DECISIONS entry cites the right `P-n`.
 
-## 6. For agents that don't auto-load project guidance
+## 7. For agents that don't auto-load project guidance
 
 First line of the task prompt must be:
 

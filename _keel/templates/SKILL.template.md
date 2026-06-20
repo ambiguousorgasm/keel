@@ -10,6 +10,10 @@ description: >
   cleaning before analysis.")
 version: 0.1
 keywords: []
+# Optional flags:
+#   manual_only: true   # never auto-selected by an agent; exported with
+#                       # disable-model-invocation:true (use for release/destructive work)
+#   export: false       # keep this skill out of .agents/skills/ (e.g. a local demo)
 # Optional: document expected inputs so callers know how to invoke this skill.
 # inputs:
 #   - name: target

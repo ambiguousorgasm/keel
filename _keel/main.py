@@ -33,7 +33,16 @@ from pathlib import Path
 _HERE = Path(__file__).resolve().parent
 
 def _find_scripts() -> Path | None:
-    # Case A: _keel/main.py, scripts/ is next door
+    """Locate the scripts/ dir containing the keel package.
+
+    Returns None when running as a PyInstaller frozen bundle — in that case
+    the package is already importable via sys._MEIPASS, no path manipulation
+    needed.
+    """
+    if getattr(sys, "frozen", False):
+        return None   # bundle: package already in sys.path via PyInstaller
+
+    # Case A: _keel/main.py — scripts/ is a sibling
     if (_HERE / "scripts" / "keel" / "main.py").is_file():
         return _HERE / "scripts"
     # Case B: already inside scripts/keel/ — parent's parent is scripts
@@ -45,7 +54,7 @@ def _find_scripts() -> Path | None:
     return None
 
 _scripts = _find_scripts()
-if _scripts is None:
+if _scripts is None and not getattr(sys, "frozen", False):
     print(
         "ERROR: could not locate the KEEL package.\n"
         "Run this script from inside the _keel/ directory or a project root.\n"
@@ -54,7 +63,7 @@ if _scripts is None:
     )
     sys.exit(1)
 
-if str(_scripts) not in sys.path:
+if _scripts is not None and str(_scripts) not in sys.path:
     sys.path.insert(0, str(_scripts))
 
 # ── check runtime dependencies before importing the package ──────────────────

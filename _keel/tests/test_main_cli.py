@@ -230,3 +230,37 @@ def test_interactive_init_with_spec(tmp_path, monkeypatch):
     model = yaml.safe_load((target / "_keel" / "spec_model.yml").read_text())
     assert model["project_prefix"] == "CRAG"
     assert model["project_name"] == "Crag Log"
+
+
+def test_prompt_prefix_reasks_on_invalid(monkeypatch, capsys):
+    from keel.main import _prompt_prefix
+    # "3" has a digit; "a1b" has a digit; "TST" is valid. (lowercase alone would
+    # be auto-uppercased and accepted, which is intended.)
+    answers = iter(["3", "a1b", "TST"])
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers))
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    result = _prompt_prefix(default=None)
+    assert result == "TST"
+    out = capsys.readouterr().out
+    assert "isn't valid" in out  # it complained and re-asked
+
+
+def test_prompt_prefix_uppercases_lowercase(monkeypatch):
+    from keel.main import _prompt_prefix
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "tst")
+    assert _prompt_prefix(default=None) == "TST"  # forgiving: auto-uppercases
+
+
+def test_prompt_prefix_accepts_default_on_blank(monkeypatch):
+    from keel.main import _prompt_prefix
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "")  # blank → default
+    result = _prompt_prefix(default="CRAG")
+    assert result == "CRAG"
+
+
+def test_prompt_prefix_sanitizes_default(monkeypatch):
+    from keel.main import _prompt_prefix
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "")
+    # a messy default gets cleaned to something valid
+    result = _prompt_prefix(default="my-app")
+    assert result == "MYAPP"

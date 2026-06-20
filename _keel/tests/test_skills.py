@@ -208,3 +208,134 @@ def test_explain_clear_loads_with_reference(repo: KeelRepo):
     # and the bundled reference is readable
     ref = repo.load_skill_file("explain-clear", "references/modes.md")
     assert "why does this exist" in ref.lower()
+
+
+# ─── Agent Skills bridge: manual_only / export / sync / lint ─────────────────
+
+from keel.skills import (  # noqa: E402
+    export_agent_skills,
+    lint_skills,
+    render_agent_skill,
+    render_catalog,
+)
+
+
+def _make_skill_full(skills_dir, sid, *, name=None, desc="does a thing", body="B",
+                     manual_only=None, export=None):
+    folder = skills_dir / sid
+    folder.mkdir(parents=True)
+    fm = [f"name: {name or sid}", f"description: {desc}", "version: 1.0"]
+    if manual_only is not None:
+        fm.append(f"manual_only: {str(manual_only).lower()}")
+    if export is not None:
+        fm.append(f"export: {str(export).lower()}")
+    (folder / "SKILL.md").write_text("---\n" + "\n".join(fm) + "\n---\n\n" + body + "\n")
+    return folder
+
+
+def test_manual_only_and_export_parsed(tmp_path):
+    skills = tmp_path / "skills"
+    _make_skill_full(skills, "dev-release", manual_only=True)
+    _make_skill_full(skills, "dev-demo", export=False)
+    infos = {i.id: i for i in list_skills(skills)}
+    assert infos["dev-release"].manual_only is True
+    assert infos["dev-release"].export is True
+    assert infos["dev-demo"].export is False
+    assert infos["dev-demo"].manual_only is False
+
+
+def test_non_bool_flag_rejected(tmp_path):
+    skills = tmp_path / "skills"
+    folder = skills / "dev-x"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(
+        "---\nname: dev-x\ndescription: d\nmanual_only: yes-please\n---\n\nb\n"
+    )
+    with pytest.raises(SkillValidationError):
+        list_skills(skills)
+
+
+def test_render_agent_skill_uses_portable_frontmatter(tmp_path):
+    skills = tmp_path / "skills"
+    _make_skill_full(skills, "dev-release", desc="ship it", manual_only=True, body="RUN")
+    mirror = render_agent_skill(load_skill(skills, "dev-release"))
+    assert "name: dev-release" in mirror          # folder-name == name (Agent Skills convention)
+    assert "description: >" in mirror
+    assert "ship it" in mirror
+    assert "disable-model-invocation: true" in mirror  # manual-only safeguard
+    assert "GENERATED from _keel/skills/" in mirror     # do-not-edit banner
+    assert mirror.rstrip().endswith("RUN")              # body carried through
+
+
+def test_export_excludes_non_exported_and_copies_bundled(tmp_path):
+    skills = tmp_path / "skills"
+    a = _make_skill_full(skills, "dev-a")
+    (a / "references").mkdir()
+    (a / "references" / "notes.md").write_text("ref")
+    _make_skill_full(skills, "dev-demo", export=False)
+    agents = tmp_path / ".agents" / "skills"
+    result = export_agent_skills(skills, agents)
+    assert result["written"] == ["dev-a"]
+    assert (agents / "dev-a" / "SKILL.md").is_file()
+    assert (agents / "dev-a" / "references" / "notes.md").read_text() == "ref"
+    assert not (agents / "dev-demo").exists()
+
+
+def test_sync_removes_only_managed_stale_mirrors(tmp_path):
+    skills = tmp_path / "skills"
+    _make_skill_full(skills, "dev-a")
+    agents = tmp_path / ".agents" / "skills"
+    export_agent_skills(skills, agents)
+    # a hand-authored, non-KEEL skill the user added directly
+    hand = agents / "user-own"
+    hand.mkdir(parents=True)
+    (hand / "SKILL.md").write_text("---\nname: user-own\ndescription: mine\n---\n\nx\n")
+    # delete the canonical dev-a, re-sync
+    import shutil
+    shutil.rmtree(skills / "dev-a")
+    result = export_agent_skills(skills, agents)
+    assert "dev-a" in result["removed"]          # KEEL-managed stale mirror removed
+    assert (agents / "user-own").exists()        # hand-authored skill preserved
+
+
+def test_lint_clean_and_drift(tmp_path):
+    skills = tmp_path / "skills"
+    _make_skill_full(skills, "dev-a")
+    agents = tmp_path / ".agents" / "skills"
+    # before sync: missing mirror is a problem
+    assert any("sync" in p for p in lint_skills(skills, agents))
+    export_agent_skills(skills, agents)
+    assert lint_skills(skills, agents) == []      # clean after sync
+    # edit canonical body → mirror now drifted
+    (skills / "dev-a" / "SKILL.md").write_text(
+        "---\nname: dev-a\ndescription: changed\n---\n\nNEW\n"
+    )
+    assert any("out of date" in p for p in lint_skills(skills, agents))
+
+
+def test_lint_flags_manual_only_missing_safeguard(tmp_path):
+    skills = tmp_path / "skills"
+    _make_skill_full(skills, "dev-release", manual_only=True)
+    agents = tmp_path / ".agents" / "skills"
+    export_agent_skills(skills, agents)
+    # tamper: strip the safeguard out of the mirror
+    mp = agents / "dev-release" / "SKILL.md"
+    mp.write_text(mp.read_text().replace("disable-model-invocation: true", ""))
+    problems = lint_skills(skills, agents)
+    assert any("safeguard" in p or "out of date" in p for p in problems)
+
+
+def test_repo_sync_and_lint_end_to_end(repo: KeelRepo):
+    result = repo.sync_agent_skills()
+    assert "dev-release" in result["written"]
+    assert "example-csv-clean" not in result["written"]   # export:false demo
+    assert repo.layout.agents_catalog.is_file()
+    rel = repo.layout.agents_skills / "dev-release" / "SKILL.md"
+    assert "disable-model-invocation: true" in rel.read_text()
+    assert repo.lint_skills() == []
+
+
+def test_catalog_marks_manual_only(repo: KeelRepo):
+    repo.sync_agent_skills()
+    cat = repo.layout.agents_catalog.read_text()
+    assert "dev-release" in cat and "manual-only" in cat

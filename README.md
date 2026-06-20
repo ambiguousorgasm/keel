@@ -140,3 +140,4 @@ designed. Its `RESULTS.md` shows, for instance, that a reviewer who reads the ra
 diff is immune to a builder's rationalization while one who reads the builder's
 *explanation* is not — validating KEEL's "review the diff, not the story" rule.
 It's mechanism validation, not a claim about real agents — see its `PRINCIPLES.md`.
+# keel

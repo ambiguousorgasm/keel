@@ -26,6 +26,7 @@ import argparse
 import functools
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 from .api import KeelRepo
 from .errors import KeelError
@@ -378,10 +379,30 @@ def _interactive_init(args: argparse.Namespace) -> argparse.Namespace:
     """Fill missing init params by prompting. Mutates and returns args."""
     print("Create a new KEEL project\n" + "-" * 25)
     if not args.path:
-        args.path = _prompt("Project path", "./my-project")
-    default_name = args.name or Path(args.path).resolve().name.replace("-", " ").title()
+        args.path = _prompt("Project path (a NEW directory to create)", "./my-project")
+    # Offer to seed from an existing spec file (this is the --spec flow, interactive).
+    if not getattr(args, "spec", None):
+        spec_in = _prompt(
+            "Seed from an existing PROJECT_SPEC file? (path, or blank to skip)", ""
+        )
+        if spec_in:
+            args.spec = spec_in
+    # If a spec was provided, read its identity to offer better defaults.
+    parsed_name = parsed_prefix = None
+    if getattr(args, "spec", None):
+        try:
+            text = Path(args.spec).expanduser().read_text()
+            parsed_name, parsed_prefix = scaffold.parse_spec_identity(text)
+        except Exception:
+            print(f"  (couldn't read {args.spec} yet — will validate when creating)")
+    default_name = (
+        args.name or parsed_name
+        or Path(args.path).expanduser().name.replace("-", " ").title()
+    )
     args.name = args.name or _prompt("Project name", default_name)
-    args.prefix = args.prefix or _prompt("Task prefix (2-6 caps)", _derive_prefix(args.name))
+    args.prefix = args.prefix or _prompt(
+        "Task prefix (2-6 caps)", parsed_prefix or _derive_prefix(args.name)
+    )
     if args.runner is None:
         args.runner = "just" if _prompt_yes("Use `just` as the command runner? (else make)", True) else "make"
     if args.git is None:
@@ -393,25 +414,24 @@ def _interactive_init(args: argparse.Namespace) -> argparse.Namespace:
 
 @_guard
 def _cmd_init(args: argparse.Namespace) -> int:
-    # If a spec file is provided, read identity from it to save the user typing.
-    spec = getattr(args, "spec", None)
-    if spec:
-        from pathlib import Path as _P
-        sp = _P(spec)
-        if not sp.is_file():
-            print(f"ERROR: --spec file not found: {sp}", file=sys.stderr)
-            return 1
-        parsed_name, parsed_prefix = scaffold.parse_spec_identity(sp.read_text())
-        args.name = args.name or parsed_name
-        args.prefix = args.prefix or parsed_prefix
-        if not args.path:
-            # default the project path to the spec's directory name-ish
-            args.path = args.path or f"./{(parsed_name or 'project').lower().replace(' ', '-')}"
-
     interactive = sys.stdin.isatty() and not args.yes
     if interactive:
         args = _interactive_init(args)
-    else:
+
+    # Resolve a spec file (from --spec or the interactive prompt) and read its
+    # identity to fill any name/prefix the user didn't supply.
+    spec = getattr(args, "spec", None)
+    if spec:
+        sp = Path(spec).expanduser()
+        if not sp.is_file():
+            print(f"ERROR: spec file not found: {sp}", file=sys.stderr)
+            return 1
+        spec = str(sp)
+        parsed_name, parsed_prefix = scaffold.parse_spec_identity(sp.read_text())
+        args.name = args.name or parsed_name
+        args.prefix = args.prefix or parsed_prefix
+
+    if not interactive:
         missing = [f for f in ("path", "name", "prefix") if not getattr(args, f)]
         if missing:
             print(

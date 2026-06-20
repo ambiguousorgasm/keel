@@ -135,3 +135,98 @@ def test_ai_start_here_template_has_placeholders():
     # And the static body's load-bearing pointers exist.
     assert "How you connect" in text
     assert "AGENTS.md" in text
+
+
+# ─── interactive path (the bit a TTY-less suite normally misses) ─────────────
+
+
+def test_interactive_init_creates_project(tmp_path, monkeypatch):
+    """Exercises _interactive_init end-to-end with mocked input. This is the path
+    that previously crashed on a missing Path import — keep it covered."""
+    import argparse
+    from keel.main import _cmd_init
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    target = tmp_path / "interactive-proj"
+    answers = iter([
+        str(target),          # Project path
+        "",                   # seed from spec? (blank = skip)
+        "Interactive Proj",   # Project name
+        "IPRJ",               # prefix
+        "y",                  # use just?
+        "n",                  # git?
+        "n",                  # env?
+    ])
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers))
+
+    ns = argparse.Namespace(
+        path=None, name=None, prefix=None, spec=None,
+        runner=None, git=None, env=None, yes=False, force=False,
+    )
+    rc = _cmd_init(ns)
+    assert rc == 0
+    assert (target / "_keel").is_dir()
+    assert (target / "PROJECT_SPEC.md").is_file()
+
+
+def test_interactive_init_default_path_does_not_crash(tmp_path, monkeypatch):
+    """The exact regression: empty path input → default → Path(default) must work."""
+    import argparse
+    from keel.main import _interactive_init
+
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    # All empty → use every default; the default_name line calls Path(args.path).
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "")
+    ns = argparse.Namespace(
+        path=None, name=None, prefix=None, spec=None,
+        runner=None, git=None, env=None, yes=False, force=False,
+    )
+    filled = _interactive_init(ns)          # must not raise NameError
+    assert filled.path                      # a default was chosen
+    assert filled.name and filled.prefix
+
+
+def test_interactive_menu_routes_to_guide(monkeypatch, capsys):
+    from keel.main import _interactive_menu
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "2")  # choose guide
+    rc = _interactive_menu()
+    assert rc == 0
+    assert "KEEL" in capsys.readouterr().out
+
+
+def test_interactive_init_with_spec(tmp_path, monkeypatch):
+    """Your scenario, the intended way: enter a project DIR, then a spec FILE.
+    name/prefix should be auto-read from the spec."""
+    import argparse
+    from keel.main import _cmd_init
+
+    spec = tmp_path / "myspec.md"
+    spec.write_text(
+        "# Crag Log — Design Spec\n\n**Project name:** Crag Log\n"
+        "**Project prefix:** CRAG\n\n## Purpose\nClimbing logbook.\n"
+    )
+    target = tmp_path / "crag-log"
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    answers = iter([
+        str(target),     # Project path (a directory)
+        str(spec),       # Seed from spec file
+        "",              # name (blank → auto from spec → "Crag Log")
+        "",              # prefix (blank → auto from spec → "CRAG")
+        "n",             # just?  (→ make, doesn't matter)
+        "n",             # git?
+        "n",             # env?
+    ])
+    monkeypatch.setattr("builtins.input", lambda *a, **k: next(answers))
+
+    ns = argparse.Namespace(path=None, name=None, prefix=None, spec=None,
+                            runner=None, git=None, env=None, yes=False, force=False)
+    rc = _cmd_init(ns)
+    assert rc == 0
+    assert (target / "_keel").is_dir()
+    # the spec became PROJECT_SPEC.md, and identity was auto-read
+    assert "Climbing logbook." in (target / "PROJECT_SPEC.md").read_text()
+    import yaml
+    model = yaml.safe_load((target / "_keel" / "spec_model.yml").read_text())
+    assert model["project_prefix"] == "CRAG"
+    assert model["project_name"] == "Crag Log"

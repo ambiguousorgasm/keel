@@ -1,0 +1,79 @@
+# {{PROJECT_NAME}} — justfile
+#
+# Entry point for all KEEL agent commands. `just check` is the canonical gate
+# that every task must pass before its handoff is written.
+#
+# Adapt the tool commands (formatter, linter, type-checker) to this project's
+# stack. Defaults assume a Python project; swap for your stack.
+
+# Default target — show available commands
+default:
+    @just --list
+
+# ─── canonical gate ──────────────────────────────────────────────────────────
+
+# Run every check in order. Tasks must pass this before handoff.
+check: fmt-check lint types test-unit test-scenario
+    @echo "✅ all checks passed"
+
+# ─── individual checks ───────────────────────────────────────────────────────
+
+fmt-check:
+    ruff format --check .
+
+fmt:
+    ruff format .
+
+lint:
+    ruff check .
+
+types:
+    mypy .
+
+test-unit:
+    pytest tests/unit -q
+
+test-scenario:
+    pytest tests/scenarios -q
+
+test-integration:
+    pytest tests/integration -q
+
+test-all:
+    pytest tests -q
+
+# ─── KEEL agent operations ───────────────────────────────────────────────────
+
+# Scaffold a new task packet. Usage: just new-task event-log-init
+new-task slug type="implementation":
+    python _keel/scripts/agent/create_task.py "{{slug}}" --type "{{type}}"
+
+# Generate context.md for a task. Usage: just build-context PROJ-001-event-log-init
+build-context task_id:
+    python _keel/scripts/agent/build_context.py "{{task_id}}"
+
+# Run a task's acceptance checks and write evidence. Usage: just verify-task PROJ-001-event-log-init
+verify-task task_id:
+    python _keel/scripts/agent/verify_task.py "{{task_id}}"
+
+# Refresh docs/code-map/ from current source tree
+update-code-map:
+    python _keel/scripts/agent/update_code_map.py
+
+# Print the project's KEEL status (current phase, active tasks, gaps)
+status:
+    @cat STATUS.md
+
+# ─── skills ──────────────────────────────────────────────────────────────────
+
+# List installed skills (id + description)
+skills:
+    python _keel/scripts/agent/skills.py list
+
+# Show a skill's full body. Usage: just skill-show dev-plan-task
+skill-show id:
+    python _keel/scripts/agent/skills.py show "{{id}}"
+
+# Scaffold a new skill. Usage: just new-skill my-skill
+new-skill id:
+    python _keel/scripts/agent/skills.py new "{{id}}"

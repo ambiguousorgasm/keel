@@ -1,0 +1,51 @@
+# {{PROJECT_NAME}} — Makefile
+#
+# Thin wrapper that delegates to `just`. Provided so contributors without
+# `just` installed can still run the common commands.
+#
+# Prefer `just <target>` when available. See `justfile` for the full surface.
+
+.PHONY: check fmt lint types test new-task build-context verify-task update-code-map status help
+
+help:
+	@echo "Available targets (delegated to just):"
+	@echo "  make check              — run all checks (gate)"
+	@echo "  make fmt                — autoformat"
+	@echo "  make lint               — lint"
+	@echo "  make types              — type-check"
+	@echo "  make test               — run all tests"
+	@echo "  make new-task SLUG=...  — scaffold a new task packet"
+	@echo "  make build-context ID=...  — build a task's context.md"
+	@echo "  make verify-task ID=...    — run a task's acceptance checks"
+	@echo "  make update-code-map    — refresh docs/code-map"
+	@echo "  make status             — show STATUS.md"
+
+check:
+	@just check
+
+fmt:
+	@just fmt
+
+lint:
+	@just lint
+
+types:
+	@just types
+
+test:
+	@just test-all
+
+new-task:
+	@just new-task "$(SLUG)" "$(or $(TYPE),implementation)"
+
+build-context:
+	@just build-context "$(ID)"
+
+verify-task:
+	@just verify-task "$(ID)"
+
+update-code-map:
+	@just update-code-map
+
+status:
+	@just status

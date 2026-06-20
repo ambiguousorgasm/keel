@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "keel"
+version = "0.1.0"
+description = "KEEL — a repo-native agent development operating system."
+readme = "scripts/keel/README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "KEEL contributors" }]
+keywords = ["ai-agents", "development-os", "claude-code", "mcp", "scaffolding"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+mcp = ["mcp>=1.27,<2"]
+
+[project.urls]
+Documentation = "https://github.com/your-org/keel"
+
+# Console entry point. After `pip install -e _keel`, `keel` is on your PATH and
+# runs from whatever KEEL-managed repo your CWD is inside.
+[project.scripts]
+keel = "keel.main:main"
+
+# The installable package is `keel`, which lives under scripts/. The `agent/`
+# path-run shims are intentionally NOT packaged — they're a no-install
+# convenience, not library code.
+[tool.setuptools]
+package-dir = { "" = "scripts" }
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["keel*"]
+exclude = ["keel.assets*"]
+
+[tool.setuptools.package-data]
+keel = ["README.md", "assets/keel_template.zip"]

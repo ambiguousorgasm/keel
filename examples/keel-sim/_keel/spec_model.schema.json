@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KEEL Spec Model",
+  "description": "Schema for the structured extraction produced by Bootstrap Step 2. The bootstrap MUST write _keel/spec_model.yml and validate it against this schema before generating any artifact in Steps 4-8.",
+  "type": "object",
+  "required": [
+    "project_name",
+    "project_prefix",
+    "purpose",
+    "tech_stack",
+    "subsystems",
+    "invariants",
+    "failure_modes",
+    "phases"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "project_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Project name as it should appear in generated headers."
+    },
+    "project_prefix": {
+      "type": "string",
+      "pattern": "^[A-Z]{2,6}$",
+      "description": "Short all-caps abbreviation used as the prefix for task IDs (e.g. ORDP for 'Order Pipeline'). 2-6 capital letters, no digits, no spaces."
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "One sentence: what this is."
+    },
+    "problem": {
+      "type": "string",
+      "description": "What problem the project solves."
+    },
+    "users": {
+      "type": "string",
+      "description": "Primary users / consumers."
+    },
+    "tech_stack": {
+      "type": "object",
+      "description": "Languages, frameworks, datastore, runtime. Free-form keys.",
+      "additionalProperties": { "type": ["string", "array"] }
+    },
+    "subsystems": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "responsibility",
+          "owns_state",
+          "must_not_mutate",
+          "allowed_deps",
+          "forbidden_deps"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "responsibility": { "type": "string", "minLength": 1 },
+          "owns_state": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "State this subsystem is allowed to mutate."
+          },
+          "must_not_mutate": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "State another subsystem owns. Cross-check: must intersect 0 other subsystems' owns_state."
+          },
+          "allowed_deps": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "forbidden_deps": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "invariants": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "statement"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^INV-[0-9]+$",
+            "description": "Stable id, e.g. INV-1. Reused across module cards and scenario tests."
+          },
+          "statement": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Falsifiable, checkable claim about system behavior."
+          },
+          "related_subsystems": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "failure_modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^FM-[0-9]+$"
+          },
+          "description": { "type": "string", "minLength": 1 },
+          "related_subsystems": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^P[0-9]+$" },
+          "name": { "type": "string", "minLength": 1 },
+          "description": { "type": "string" },
+          "depends_on": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^P[0-9]+$" }
+          }
+        }
+      }
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "decisions_or_assumptions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Pre-existing decisions or stated assumptions the human provided in the spec."
+    },
+    "glossary": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

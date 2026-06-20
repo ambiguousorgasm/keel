@@ -1,0 +1,6 @@
+# KEEL agent script dependencies.
+# Install with: pip install -r _keel/requirements.txt
+# Python 3.11+ recommended.
+
+pyyaml>=6.0
+jsonschema>=4.0

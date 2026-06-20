@@ -1,0 +1,99 @@
+project_name: KEEL Gate Simulator
+project_prefix: SIM
+purpose: A deterministic, dependency-free simulator that validates KEEL's governance gates by running synthetic agents with known behavioral biases and measuring whether the gates behave as designed.
+problem: KEEL's design claims are arguments, not evidence. This turns them into falsifiable measurements without real LLMs.
+users: KEEL maintainers validating or revising design decisions.
+tech_stack:
+  language: python
+  python_version: "3.11+"
+  framework: none
+  datastore: none
+  runtime: CLI / importable package
+subsystems:
+  - name: substrate
+    responsibility: model an abstract project — subsystems owning files, principles, and synthetic Diffs carrying violations
+    owns_state: [synthetic project definition, Diff objects]
+    must_not_mutate: [agent profiles, gate logic, metrics]
+    allowed_deps: []
+    forbidden_deps: [profiles, gate, runner, metrics]
+  - name: profiles
+    responsibility: synthetic agent behavioral profiles (Builder, Reviewer) and seeded sampling into behaviors
+    owns_state: [profile dataclasses, per-trial RNG draw]
+    must_not_mutate: [gate verdict logic]
+    allowed_deps: [substrate]
+    forbidden_deps: [gate, runner, metrics]
+  - name: gate
+    responsibility: model KEEL's gate — deterministic scope check, deterministic scenario check, judgment reviewer — and classify outcomes
+    owns_state: [verdict and outcome classification]
+    must_not_mutate: [profile internals beyond sampled behavior]
+    allowed_deps: [substrate, profiles]
+    forbidden_deps: [runner, metrics]
+  - name: runner
+    responsibility: execute trials — one cycle and batches of N seeded trials
+    owns_state: [trial orchestration, seeded RNG lifecycle]
+    must_not_mutate: [metric aggregation math]
+    allowed_deps: [substrate, profiles, gate]
+    forbidden_deps: [metrics]
+  - name: metrics
+    responsibility: aggregate outcomes into reported rates
+    owns_state: [aggregation]
+    must_not_mutate: [trial production]
+    allowed_deps: []
+    forbidden_deps: [substrate, profiles, gate]
+  - name: experiments
+    responsibility: named parameter-sweep experiments producing falsifiable claim tables
+    owns_state: [experiment definitions, result formatting]
+    must_not_mutate: []
+    allowed_deps: [runner, metrics]
+    forbidden_deps: [substrate, profiles, gate]
+invariants:
+  - id: INV-1
+    statement: Determinism — running any experiment twice with the same seed produces byte-identical results.
+    related_subsystems: [runner, experiments]
+  - id: INV-2
+    statement: Scope violations are caught deterministically when scope-enforcement is available; an in-scope-only diff never triggers a scope catch.
+    related_subsystems: [gate]
+  - id: INV-3
+    statement: The reviewer's verdict is the only mechanism that can catch a principle violation; disable the reviewer and principle escape rate equals the builder's drift rate.
+    related_subsystems: [gate]
+  - id: INV-4
+    statement: Every reported metric is a ratio of counted outcomes — no metric is hand-set or read directly from a profile parameter.
+    related_subsystems: [metrics]
+  - id: INV-5
+    statement: The core performs zero network calls and imports no third-party package.
+    related_subsystems: [substrate, profiles, gate, runner, metrics]
+failure_modes:
+  - id: FM-1
+    description: Circular validation — a metric echoing an input parameter proves nothing.
+    related_subsystems: [metrics]
+  - id: FM-2
+    description: Hidden nondeterminism — unseeded RNG, dict ordering, or wall-clock leaking into results.
+    related_subsystems: [runner]
+  - id: FM-3
+    description: Conflating mechanism with realism — presenting synthetic drift as a claim about real agents.
+    related_subsystems: [experiments]
+  - id: FM-4
+    description: Gate bypass — an outcome computed without running scope/scenario/review in the correct order.
+    related_subsystems: [gate]
+phases:
+  - {id: P0, name: substrate and profiles, depends_on: []}
+  - {id: P1, name: gate and runner, depends_on: [P0]}
+  - {id: P2, name: metrics, depends_on: [P1]}
+  - {id: P3, name: experiments and CLI, depends_on: [P2]}
+out_of_scope:
+  - real LLM calls or API usage
+  - calibrating profile parameters against real agent data
+  - claims about how real agents behave
+  - persistence, visualization beyond text tables, web UI
+decisions_or_assumptions:
+  - "FOUNDATIONAL: Mechanism-validation scope only; no LLM in the core."
+  - "FOUNDATIONAL: Determinism via a single seeded RNG threaded through a trial."
+  - "FOUNDATIONAL: Scope enforcement modeled as deterministic when git is available."
+  - "Default 10,000 trials per data point; tunable."
+glossary:
+  trial: one simulated task cycle (builder diff → gate → outcome)
+  profile: a parameterized synthetic agent (Builder or Reviewer)
+  scope violation: a diff touching files outside the task's allowed scope
+  principle violation: a diff contradicting a project principle (needs review)
+  escape: a principle violation reaching merged without being caught
+  outcome: the classified result of a trial

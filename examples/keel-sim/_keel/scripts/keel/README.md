@@ -1,0 +1,170 @@
+# KEEL Python API (`keel`)
+
+A stateless, importable interface to a KEEL-managed repository. This is the
+**Layer 1 integration surface** — the thing other tools (AI APIs, an MCP server,
+custom orchestrators) import to drive the KEEL workflow programmatically.
+
+## Design contract
+
+Three invariants hold for every call:
+
+1. **Stateless.** A `KeelRepo` holds only the resolved project *location*, never
+   project *content*. Every method re-reads files. Discard the object and
+   nothing is lost, because nothing was cached. There is no daemon, no server
+   process, no in-memory model of truth.
+2. **The repo is canonical.** Every method reads or writes files under the
+   project root. There is no separate database.
+3. **Same gates as the CLI.** `verify_task()` runs the identical scope and
+   scenario checks the `just verify-task` CLI does. There is no convenience
+   path that bypasses verification.
+
+## Install
+
+KEEL works with or without installing the package.
+
+**Option A — editable install (recommended for integrators).** Makes `keel`
+importable from anywhere and puts the CLIs on your PATH as console scripts:
+
+```bash
+pip install -e _keel
+```
+
+Then, from any directory inside a KEEL-managed repo:
+
+```python
+from keel import KeelRepo
+repo = KeelRepo.discover()
+```
+
+and the console scripts are available:
+
+```bash
+keel task create storage-init
+keel task context PROJ-001-storage-init
+keel task verify PROJ-001-storage-init
+keel code-map
+keel info          # orientation summary
+keel doctor        # environment health check
+```
+
+**Option B — no install.** Add `_keel/scripts` to your path at runtime, and run
+the path-run shims (this is what the generated `justfile` does, so no install is
+ever required to use KEEL):
+
+```python
+import sys
+sys.path.insert(0, "/path/to/repo/_keel/scripts")
+from keel import KeelRepo
+```
+
+```bash
+python _keel/scripts/agent/build_context.py PROJ-001-storage-init
+```
+
+Both paths call the exact same code.
+
+## Quick start
+
+```python
+from keel import KeelRepo
+
+repo = KeelRepo.discover()                  # walks up from CWD to find _keel/
+# or: repo = KeelRepo("/path/to/repo")
+
+task = repo.create_task("storage-init")     # CreatedTask
+ctx  = repo.build_context(task.task_id)     # ContextResult (writes context.md)
+res  = repo.verify_task(task.task_id)        # VerificationResult
+
+if not res.passed:
+    for check in res.results:
+        if not check.passed:
+            print(check.name, check.stderr)
+```
+
+## API surface
+
+### `KeelRepo`
+
+| Method | Returns | Notes |
+|---|---|---|
+| `KeelRepo(root)` | `KeelRepo` | Explicit project root. Raises `KeelError` if no `_keel/`. |
+| `KeelRepo.discover(start=None)` | `KeelRepo` | Walks up from `start` (default CWD). |
+| `repo.root` | `Path` | The project root. |
+| **Write** | | |
+| `create_task(slug, *, task_type='implementation', prefix_override=None)` | `CreatedTask` | Scaffolds a packet under `tasks/active/`. |
+| `build_context(task_id)` | `ContextResult` | Writes `context.md`; verbatim, cache-ordered. |
+| `verify_task(task_id)` | `VerificationResult` | Runs all gates; writes `evidence/verification.md`. |
+| `update_code_map()` | `CodeMapResult` | Refreshes `docs/code-map/`. |
+| **Read** | | |
+| `get_spec_model(validate=True)` | `dict` | Loads + schema-validates `spec_model.yml`. |
+| `read_governance(name)` | `str` | Verbatim text of a governance doc by filename. |
+| `list_governance()` | `list[str]` | Canonical governance docs that exist. |
+| `list_tasks(state=None)` | `list[TaskInfo]` | `state`: `None`/`active`/`completed`/`blocked`. |
+| `get_task(task_id)` | `TaskInfo` | Raises `TaskNotFound`. |
+| `read_task_file(task_id, filename)` | `str` | e.g. `read_task_file(id, "brief.md")`. |
+| **Skills** | | |
+| `list_skills()` | `list[SkillInfo]` | Frontmatter only (progressive disclosure). |
+| `get_skill(skill_id)` | `Skill` | Full load: metadata + body. |
+| `load_skill_file(skill_id, relpath)` | `str` | Read a bundled file (traversal-guarded). |
+| `search_skills(query)` | `list[SkillInfo]` | Match id/name/description/keywords. |
+| `skills_index()` | `str` | Compact id+description index to inject into a prompt. |
+| `create_skill(skill_id, *, name=None, description=None)` | `Skill` | Scaffold a new skill folder. |
+
+### Result types
+
+- **`CreatedTask`** — `task_id, path, brief, acceptance, task_type`
+- **`ContextResult`** — `task_id, path, text, sources, warnings`
+- **`VerificationResult`** — `task_id, results: list[CheckResult], summary_path, passed`
+- **`CheckResult`** — `name, passed, stdout, stderr, returncode`
+- **`CodeMapResult`** — `subsystems, total_files, index_path`
+- **`TaskInfo`** — `task_id, state, prefix, number, slug, path, has_plan, has_context, has_review, has_handoff`
+- **`SkillInfo`** — `id, name, description, version, keywords, path, bundled_files`
+- **`Skill`** — `SkillInfo` fields plus `body`; `.render()` returns the body
+
+### Exceptions
+
+All derive from `KeelError`:
+
+| Exception | Raised when |
+|---|---|
+| `ProjectNotFound` | No `_keel/` found during discovery. |
+| `SpecModelError` | `spec_model.yml` missing, unparseable, or fails schema. |
+| `TaskNotFound` | A referenced task ID doesn't exist. |
+| `TaskExists` | A new task would collide with an existing folder. |
+| `ValidationError` | Bad slug, unknown task type, bad state filter. |
+| `TemplateError` | A required template/file is missing. |
+| `GovernanceNotFound` | A requested governance doc is absent. |
+
+## Notes for integrators
+
+- **Writes are real and immediate.** `create_task` and `build_context` write to
+  disk on the call. There is no staging. If you want a preview-before-write
+  flow (recommended for remote agents writing governance), build that in your
+  layer — the API deliberately doesn't hold a transaction, consistent with the
+  stateless contract.
+- **`verify_task` shells out.** It runs the commands in `acceptance.yml`. Run it
+  in an appropriately sandboxed working tree if the caller is untrusted.
+- **Concurrency.** The API does no locking. Last-write-wins on `context.md`,
+  evidence, etc. Serialize writes per task in your orchestration layer if you
+  run parallel agents against the same packet.
+
+## Relationship to the CLIs and skills
+
+- The CLIs in `_keel/scripts/agent/` are thin wrappers over this exact API.
+- The `/dev-*` skills in `_keel/skills/` drive the same workflow at the prompt
+  level. The API is for when you want to drive it from code instead.
+- A future MCP server (Layer 2) would wrap this API to expose KEEL as tools to
+  MCP-aware agents like Claude Code. The stateless design is what makes that
+  wrapper trivial.
+
+## MCP server (Layer 2)
+
+Built. See `MCP.md` for the full guide. In brief:
+
+```bash
+pip install -e '_keel[mcp]'
+keel-mcp --root /path/to/repo
+```
+
+exposes 17 tools (tasks, skills, governance) to any MCP client. It's a thin,
+stateless wrapper over this exact `KeelRepo` — same gates, same source of truth.

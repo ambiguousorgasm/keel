@@ -1,0 +1,36 @@
+task: <ID>
+
+# Optional metadata for cost-aware model routing. Not enforced by KEEL.
+complexity_hint: moderate  # trivial | moderate | complex
+
+# Each check is run by scripts/agent/verify_task.py. All must pass before handoff.
+checks:
+  - name: format
+    run: just fmt-check
+  - name: lint
+    run: just lint
+  - name: types
+    run: just types
+  - name: unit
+    run: just test-unit
+  - name: scenarios
+    run: just test-scenario
+
+# Scenarios that must specifically pass for this task. Reference the INV-n / FM-n
+# ids from spec_model.yml.
+scenarios_required:
+  - <scenario_name>
+
+# Files this task is permitted to change. The reviewer enforces — diffs touching
+# files outside this list fail the verification gate.
+scope_allowlist:
+  - path/glob/**
+
+# Principles this task was checked against. If any principle could plausibly be
+# violated by this change, name it here so the reviewer audits explicitly.
+principles_checked:
+  - P-n
+  # or: "none directly applicable"
+
+# Optional: shell commands the verifier should also run.
+extra_checks: []

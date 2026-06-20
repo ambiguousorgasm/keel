@@ -1,0 +1,129 @@
+project_name: URL Shortener
+project_prefix: URLS
+purpose: A small HTTP service that maps long URLs to short codes and redirects them, with TTLs and per-code click analytics.
+
+problem: Users need shareable short links for long URLs and basic visibility into how often each link is clicked. Operators need confidence that codes are unique, that expired links stop working, and that the system can be reasoned about under concurrency.
+users: end users creating links; operators of the service.
+
+tech_stack:
+  language: python
+  python_version: "3.11+"
+  framework: FastAPI
+  datastore: PostgreSQL
+  runtime: container, single-region
+
+subsystems:
+  - name: storage
+    responsibility: persist links and click counters
+    owns_state:
+      - links table
+      - clicks counter rows
+    must_not_mutate: []
+    allowed_deps:
+      - PostgreSQL
+    forbidden_deps:
+      - api
+      - encoder
+      - analytics
+
+  - name: encoder
+    responsibility: generate short codes with collision-retry against storage
+    owns_state: []
+    must_not_mutate:
+      - links table   # only storage may mutate
+      - clicks counter rows
+    allowed_deps:
+      - storage
+    forbidden_deps:
+      - api
+      - analytics
+
+  - name: api
+    responsibility: HTTP surface — POST /shorten and GET /{code}
+    owns_state: []
+    must_not_mutate:
+      - links table
+      - clicks counter rows
+    allowed_deps:
+      - encoder
+      - storage
+      - analytics
+    forbidden_deps: []
+
+  - name: analytics
+    responsibility: increment click counters and expose stats
+    owns_state:
+      - click increment events
+    must_not_mutate:
+      - links table
+    allowed_deps:
+      - storage
+    forbidden_deps:
+      - api
+      - encoder
+
+invariants:
+  - id: INV-1
+    statement: A given short code always resolves to the same target URL throughout its lifetime — codes are immutable once issued.
+    related_subsystems: [storage, encoder]
+  - id: INV-2
+    statement: No two distinct long URLs are ever assigned the same code at the same time.
+    related_subsystems: [encoder, storage]
+  - id: INV-3
+    statement: Click counts are monotonically non-decreasing for the lifetime of a code.
+    related_subsystems: [analytics, storage]
+  - id: INV-4
+    statement: A GET for an expired code returns HTTP 410 Gone, not 302 Found.
+    related_subsystems: [api, storage]
+  - id: INV-5
+    statement: All API responses are derivable from storage state alone.
+    related_subsystems: [api, storage]
+
+failure_modes:
+  - id: FM-1
+    description: Two concurrent POST /shorten requests race for the same candidate code; one silently overwrites the other.
+    related_subsystems: [encoder, storage]
+  - id: FM-2
+    description: A counter increment fails partway; the redirect succeeds; the count silently desyncs.
+    related_subsystems: [analytics, storage]
+  - id: FM-3
+    description: A code expires between lookup and redirect; the redirect proceeds anyway, violating INV-4.
+    related_subsystems: [api, storage]
+  - id: FM-4
+    description: A storage read replica returns stale data; the API serves a code that has been deleted upstream.
+    related_subsystems: [storage, api]
+
+phases:
+  - id: P0
+    name: storage
+    description: schema, atomic insert, atomic counter increment, CRUD interface
+    depends_on: []
+  - id: P1
+    name: encoder
+    description: code generation + collision-retry against storage
+    depends_on: [P0]
+  - id: P2
+    name: api
+    description: HTTP layer; redirect with expiry check
+    depends_on: [P0, P1]
+  - id: P3
+    name: analytics
+    description: click counting + stats endpoint
+    depends_on: [P0, P2]
+
+out_of_scope:
+  - user accounts, authentication, rate limiting
+  - custom code aliases
+  - editing or deleting existing short links
+  - multi-region replication
+
+decisions_or_assumptions:
+  - "FOUNDATIONAL: Codes are 7 characters, base62."
+  - "FOUNDATIONAL: Default TTL is 90 days unless specified at creation."
+  - "Collision-retry budget is 5 attempts; exhausting returns 503. Not foundational; subject to tuning."
+
+glossary:
+  code: the 7-character short identifier (e.g. `aB3xK9q`)
+  target URL: the original long URL the code redirects to
+  TTL: time-to-live; the code expires after this duration
+  base62: alphabet of `[0-9a-zA-Z]`, used for code generation
